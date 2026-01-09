@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Download') {
             steps {
-                git branch: 'main', poll: false, url: 'https://github.com/karpanitava/mavenbuild.git'
+                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_javawebapp.git'
             }
         }
         
@@ -17,7 +17,7 @@ pipeline {
 
         stage('Deployment') {
             steps {
-                bat '''curl -u hariadmin:hariadmin -T "C:/ProgramData/Jenkins/.jenkins/workspace/newpo/target/mywebapp.war" "http://localhost:8181/manager/text/deploy?path=/testapp&update=true"'''
+                bat '''curl -u admin:admin123 -T "C:/ProgramData/Jenkins/.jenkins/workspace/newpo/target/mywebapp.war" "http://localhost:9090/manager/text/deploy?path=/testapp&update=true"'''
             }
         }
 
