@@ -23,7 +23,7 @@ pipeline {
 
         stage('Testing') {
             steps {
-                git url: 'https://github.com/karpanitava/testingweb.git'
+                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_testingweb.git'
                 bat 'cmd java -jar C:/ProgramData/Jenkins/.jenkins/workspace/newpo/testwebapp.jar'
             }
         }
