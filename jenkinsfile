@@ -1,145 +1,30 @@
 pipeline {
-    agent any // Could be 'agent { label 'build-agent' }' for specific capabilities
-
-    options {
-        // Set a global timeout for the entire pipeline
-        timeout(time: 2, unit: 'HOURS')
-        // Discard old builds to save disk space
-        buildDiscarder(logRotator(numToKeepStr: '10'))
+    agent any
+    environment {
+        APP_NAME = "testapp"   // context path
+        WAR_NAME = "cicdclouds-api.war" // artifact name
     }
-
-    parameters {
-        string(name: 'DEV_TOMCAT_URL', defaultValue: 'http://localhost:8888', description: 'URL for Development Tomcat')
-        string(name: 'PROD_TOMCAT_URL', defaultValue: 'http://localhost:8889', description: 'URL for Production Tomcat')
-        string(name: 'DEV_CONTEXT_PATH', defaultValue: 'pipetest', description: 'Context path for Dev deployment')
-        string(name: 'PROD_CONTEXT_PATH', defaultValue: 'pipeprod', description: 'Context path for Prod deployment')
-        // This parameter definition is syntactically correct and properly quotes the path.
-        string(name: 'TEST_WAR_PATH', defaultValue: 'C:/ProgramData/Jenkins/.jenkins/workspace/126/test.jar', description: 'Path to the test WAR file')
-    }
-
     stages {
-        stage('Source Checkout (Application)') {
+        stage('Download') {
             steps {
-                echo "Cloning application repository: https://github.com/karpanitava/ci-cd.git"
-                git url: 'https://github.com/karpanitava/ci-cd.git', branch: 'master' // Specify a branch
+                git branch: 'main', url: 'https://github.com/cicdclouds/cicdclouds_javawebappi.git'
             }
         }
-
-        stage('Build Application') {
-            // Could use agent { label 'maven-agent' } if Maven is only on specific agents
+        stage('Build') {
             steps {
-                script {
-                    try {
-                        echo "Building application with Maven..."
-                        bat 'mvn clean package -DskipTests' // Skip tests here if they are run in a separate stage
-                        // Archive the generated WAR file for later use
-                        archiveArtifacts artifacts: '**/*.war', fingerprint: true
-                        echo "Application build complete."
-                    } catch (Exception e) {
-                        currentBuild.result = 'FAILURE'
-                        echo "Build failed: ${e.message}"
-                        error "Application build failed." // Fail the stage
-                    }
-                }
+                bat 'mvn clean package'
             }
         }
-
-        stage('Deploy to Dev Environment') {
+        stage('Deployment') {
             steps {
-                script {
-                    try {
-                        echo "Deploying application to Development Tomcat: ${params.DEV_TOMCAT_URL}/${params.DEV_CONTEXT_PATH}"
-                        deploy adapters: [tomcat9(
-                            credentialsId: 'e2ccbc94-2e56-4bc0-9c30-7efccacaac74',
-                            url: params.DEV_TOMCAT_URL
-                        )],
-                        contextPath: params.DEV_CONTEXT_PATH,
-                        war: '**/*.war'
-                        echo "Deployment to Dev environment complete."
-                    } catch (Exception e) {
-                        currentBuild.result = 'FAILURE'
-                        echo "Deployment to Dev failed: ${e.message}"
-                        error "Deployment to Dev environment failed."
-                    }
-                }
+                bat """curl -u admin:admin123 -T "%WORKSPACE%\\target\\${WAR_NAME}" "http://localhost:9090/manager/text/deploy?path=/${APP_NAME}&update=true"""
             }
         }
-
-        stage('Automated Testing') {
-            // This stage downloads a *different* repository for testing, which is unusual.
-            // Typically, tests are part of the same application repository or a separate test suite.
-            // Assuming 'tetsingjava.git' contains a test runner.
+        stage('Testing') {
             steps {
-                script {
-                    try {
-                        echo "Cloning testing repository: https://github.com/karpanitava/tetsingjava.git"
-                        git url: 'https://github.com/karpanitava/tetsingjava.git', branch: 'main' // Specify branch
-                        echo "Executing tests using ${params.TEST_WAR_PATH}"
-                        // *** FIX APPLIED HERE: Correctly executing the JAR ***
-                        // The previous 'bat 'cmd java -jar'' was incomplete.
-                        // This now properly executes the JAR specified by the parameter.
-                        bat "cmd java -jar \"${params.TEST_WAR_PATH}\""
-                        // Publish test results if they generate JUnit XML reports
-                        // junit '**/target/surefire-reports/*.xml' // Example for Maven Java tests
-                        echo "Automated testing complete."
-                    } catch (Exception e) {
-                        currentBuild.result = 'UNSTABLE' // Or 'FAILURE' if tests are critical
-                        echo "Automated testing failed or was unstable: ${e.message}"
-                        error "Automated testing failed."
-                    }
-                }
+                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_testwebappi.git'
+                bat "java -Dapp.host=localhost -Dapp.port=9090 -Dapp.context=${APP_NAME} -jar target/functionalapi-tests.jar"
             }
-        }
-
-        // The commented-out stage is now correctly formatted.
-        
-        stage('Manual Approval for Production') {
-            // This gate ensures human intervention before deploying to production
-            steps {
-                input message: 'Approve deployment to Production?\', ok: \'Deploy to Production', submitter: 'Adarsh'
-            }
-        }
-        
-
-        stage('Deploy to Production Environment') {
-            // Could use agent { label 'prod-deploy-agent' } for specific production agents
-            steps {
-                script {
-                    try {
-                        echo "Deploying application to Production Tomcat: ${params.PROD_TOMCAT_URL}/${params.PROD_CONTEXT_PATH}"
-                        deploy adapters: [tomcat9(
-                            credentialsId: '623ac18f-34f7-40f2-ade6-dbf2888fb4d6',
-                            url: params.PROD_TOMCAT_URL
-                        )],
-                        contextPath: params.PROD_CONTEXT_PATH,
-                        war: '**/*.war'
-                        echo "Deployment to Production environment complete."
-                    } catch (Exception e) {
-                        currentBuild.result = 'FAILURE'
-                        echo "Deployment to Prod failed: ${e.message}"
-                        error "Deployment to Production environment failed."
-                    }
-                }
-            }
-        }
-    } // Correct closing brace for 'stages' block
-
-    post {
-        always {
-            echo 'Pipeline finished. Cleaning up workspace...'
-            // cleanWs() // Uncomment if you want to clean the workspace after every build
-        }
-        success {
-            echo 'Pipeline successfully completed all stages!'
-            // Add Slack/email notification for success
-        }
-        failure {
-            echo 'Pipeline failed! Check logs for details.'
-            // Add Slack/email notification for failure, with build link
-        }
-        unstable {
-            echo 'Pipeline finished with unstable results (e.g., tests failed).'
-            // Add notification for instability
         }
     }
 }
