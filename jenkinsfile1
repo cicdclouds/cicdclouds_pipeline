@@ -1,68 +1,30 @@
 pipeline {
     agent any
-
+    environment {
+        APP_NAME = "testapp"   // context path
+        WAR_NAME = "cicdclouds-api.war" // artifact name
+    }
     stages {
         stage('Download') {
             steps {
-                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_javawebapp.git'
+                git branch: 'main', url: 'https://github.com/cicdclouds/cicdclouds_javawebappi.git'
             }
         }
-        
         stage('Build') {
             steps {
-                bat 'mvn  package'
-                //sh 'mvn clean package'//
+                bat 'mvn clean package'
             }
         }
-
         stage('Deployment') {
             steps {
-                bat '''curl -u admin:admin123 -T "C:/ProgramData/Jenkins/.jenkins/workspace/newpo/target/mywebapp.war" "http://localhost:9090/manager/text/deploy?path=/testapp&update=true"'''
+                bat """curl -u admin:admin123 -T "%WORKSPACE%\\target\\${WAR_NAME}" "http://localhost:9090/manager/text/deploy?path=/${APP_NAME}&update=true"""
             }
         }
-
         stage('Testing') {
             steps {
-                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_testingweb.git'
-                bat 'cmd java -jar C:/ProgramData/Jenkins/.jenkins/workspace/newpo/testwebapp.jar'
+                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_testwebappi.git'
+                bat "java -Dapp.host=localhost -Dapp.port=9090 -Dapp.context=${APP_NAME} -jar target/functionalapi-tests.jar"
             }
-        }
-        stage('Check Results') {
-                steps {
-                    script {
-                        if (currentBuild.result == 'FAILURE') {
-                            echo "Tests failed!"
-                        } else {
-                            echo "Tests passed!"
-                        }
-                    }
-                }
-        }
-        stage("Delivery Approval") {
-            steps {
-                input message: 'Approve deployment to Production?', ok: 'Deploy to Production', submitter: 'hariprasad'
-            }
-        }
-
-        stage("Delivery") {
-            steps {
-                bat '''curl -u prasadadmin:prasadadmin -T "C:/ProgramData/Jenkins/.jenkins/workspace/newpo/target/mywebapp.war" "http://localhost:8282/manager/text/deploy?path=/prodapp&update=true"'''
-            }
-        }
-    } // closes stages
-// Post-build actions (e.g., notifications, cleanup)
-    post {
-        always {
-            echo "Pipeline finished. Current build status: ${currentBuild.result}"
-            // You can add more post-build actions here, like archiving artifacts or sending notifications
-        }
-        success {
-            echo "Pipeline completed successfully!"
-        }
-        failure {
-            echo "Pipeline failed. Check logs for details."
         }
     }
-} // closes pipeline
-
-
+}
