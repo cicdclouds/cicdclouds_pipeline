@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_IMAGE = "cicdclouds/java-web-app"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
-        TOMCAT_IP = "http:localhost:9090" // Change to your VM IP
+        TOMCAT_IP = "http://localhost:9090" // Change to your VM IP
     }
 
     stages {
