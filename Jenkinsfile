@@ -2,62 +2,56 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "cicdclouds/java-web-app"
-        DOCKER_TAG = "${env.BUILD_NUMBER}"
-        TOMCAT_IP = "http://localhost:9090" // Change to your VM IP
+        DOCKER_IMAGE = "cicdclouds-java-app"
+        // Use a static tag or build number for local tracking
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
         stage('Checkout') {
             steps {
+                // Ensure the branch name matches (main or master)
                 git branch: 'main', url: 'https://github.com/cicdclouds/cicdclouds_javawebappi.git'
             }
         }
 
-        stage('Build with Maven') {
+        stage('Maven Build') {
             steps {
-                // Assuming this is a Maven project; if Gradle, use ./gradlew build
+                // Generates the .war file in the 'target' directory
                 sh 'mvn clean package'
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Local Docker Build') {
             steps {
-                script {
-                    docker.withRegistry('', 'docker-hub-credentials-id') {
-                        def appImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
-                        appImage.push()
-                        appImage.push('latest')
-                    }
-                }
+                // This builds the image locally on your server
+                sh "docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${IMAGE_TAG} ${DOCKER_IMAGE}:latest"
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
-                echo "Deploying .war file to Tomcat..."
-                // Uses scp to move the built war file to Tomcat's webapps folder
-                sshagent(['tomcat-ssh-key']) {
-                    sh "scp -o StrictHostKeyChecking=no target/*.war vboxuser@${TOMCAT_IP}:/var/lib/tomcat9/webapps/app.war"
-                }
+                echo "Copying WAR to local Tomcat..."
+                // Adjust the path to where your Tomcat 'webapps' folder is located
+                sh "cp target/*.war /var/lib/tomcat9/webapps/app.war"
             }
         }
 
         stage('Deploy to Minikube') {
             steps {
-                echo "Updating Kubernetes Deployment..."
-                // Updates the image in your K8s cluster
-                sh "kubectl set image deployment/java-app-deployment java-app-container=${DOCKER_IMAGE}:${DOCKER_TAG}"
+                script {
+                    echo "Deploying to Minikube..."
+                    // This tells Minikube to use the image you just built locally
+                    sh "kubectl set image deployment/java-web-deployment java-container=${DOCKER_IMAGE}:${IMAGE_TAG}"
+                }
             }
         }
     }
 
     post {
-        success {
-            echo "Successfully deployed to both Tomcat and Minikube!"
-        }
-        failure {
-            echo "Build failed. Check the Jenkins console output."
+        always {
+            echo "Build Finished."
         }
     }
 }
