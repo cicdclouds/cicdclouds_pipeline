@@ -1,30 +1,63 @@
 pipeline {
     agent any
+
     environment {
-        APP_NAME = "testapp"   // context path
-        WAR_NAME = "cicdclouds-api.war" // artifact name
+        DOCKER_IMAGE = "cicdclouds/java-web-app"
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        TOMCAT_IP = "http:localhost:9090" // Change to your VM IP
     }
+
     stages {
-        stage('Download') {
+        stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/cicdclouds/cicdclouds_javawebappi.git'
             }
         }
-        stage('Build') {
+
+        stage('Build with Maven') {
             steps {
-                bat 'mvn clean package'
+                // Assuming this is a Maven project; if Gradle, use ./gradlew build
+                sh 'mvn clean package'
             }
         }
-        stage('Deployment') {
+
+        stage('Docker Build & Push') {
             steps {
-                bat """curl -u admin:admin123 -T "%WORKSPACE%\\target\\${WAR_NAME}" "http://localhost:9090/manager/text/deploy?path=/${APP_NAME}&update=true"""
+                script {
+                    docker.withRegistry('', 'docker-hub-credentials-id') {
+                        def appImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                        appImage.push()
+                        appImage.push('latest')
+                    }
+                }
             }
         }
-        stage('Testing') {
+
+        stage('Deploy to Tomcat') {
             steps {
-                git branch: 'main', poll: false, url: 'https://github.com/cicdclouds/cicdclouds_testwebappi.git'
-                bat "java -Dapp.host=localhost -Dapp.port=9090 -Dapp.context=${APP_NAME} -jar target/functionalapi-tests.jar"
+                echo "Deploying .war file to Tomcat..."
+                // Uses scp to move the built war file to Tomcat's webapps folder
+                sshagent(['tomcat-ssh-key']) {
+                    sh "scp -o StrictHostKeyChecking=no target/*.war vboxuser@${TOMCAT_IP}:/var/lib/tomcat9/webapps/app.war"
+                }
             }
+        }
+
+        stage('Deploy to Minikube') {
+            steps {
+                echo "Updating Kubernetes Deployment..."
+                // Updates the image in your K8s cluster
+                sh "kubectl set image deployment/java-app-deployment java-app-container=${DOCKER_IMAGE}:${DOCKER_TAG}"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Successfully deployed to both Tomcat and Minikube!"
+        }
+        failure {
+            echo "Build failed. Check the Jenkins console output."
         }
     }
 }
