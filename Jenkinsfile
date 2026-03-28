@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // FIX 1: Added your username so Docker Hub knows who owns the image
-        DOCKER_HUB_USER = "your_dockerhub_username_here" // <-- CHANGE THIS!
+        DOCKER_HUB_USER = "hariprasad15" // <-- CHANGE THIS!
         DOCKER_IMAGE = "${DOCKER_HUB_USER}/cicdclouds-java-app"
         IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
